@@ -26,6 +26,7 @@ RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
+    gosu \
     && rm -rf /var/lib/apt/lists/*
 RUN corepack enable
 
@@ -36,7 +37,9 @@ WORKDIR /wrapper
 COPY package.json /wrapper/package.json
 RUN npm install --omit=dev && npm cache clean --force
 COPY src /wrapper/src
+COPY scripts/entrypoint.sh /wrapper/entrypoint.sh
 COPY scripts/bootstrap-ceo.mjs /wrapper/template/bootstrap-ceo.mjs
+RUN chmod +x /wrapper/entrypoint.sh
 
 # Optional local adapters/tools parity with upstream Dockerfile.
 RUN npm install --global --omit=dev @anthropic-ai/claude-code@latest @openai/codex@latest opencode-ai
@@ -45,6 +48,7 @@ RUN mkdir -p /paperclip \
     && chown -R node:node /app /paperclip /wrapper
 
 # Railway sets PORT at runtime and this process binds to it.
+# Entrypoint runs as root, fixes /paperclip volume permissions, then execs as node.
 EXPOSE 3100
-USER node
+ENTRYPOINT ["/wrapper/entrypoint.sh"]
 CMD ["node", "/wrapper/src/server.js"]
