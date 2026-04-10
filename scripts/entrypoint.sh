@@ -4,6 +4,17 @@ set -e
 # Create dirs Paperclip needs and ensure the whole tree is owned by node.
 mkdir -p /paperclip/instances/default/logs
 
+# Install hermes-agent on first boot into /paperclip/hermes-venv (persisted volume).
+# Skipped if already installed. Runs as root before the gosu switch so it can write to /paperclip.
+HERMES_VENV="/paperclip/hermes-venv"
+if [ ! -f "$HERMES_VENV/bin/hermes" ]; then
+  echo "[entrypoint] Installing hermes-agent into $HERMES_VENV (first boot only)..."
+  python3 -m venv "$HERMES_VENV"
+  "$HERMES_VENV/bin/pip" install --no-cache-dir --quiet hermes-agent
+  echo "[entrypoint] hermes-agent installed."
+fi
+export PATH="$HERMES_VENV/bin:$PATH"
+
 # Seed Hermes config on first boot.
 # HOME=/paperclip per Paperclip Dockerfile, so ~/.hermes == /paperclip/.hermes.
 HERMES_HOME="/paperclip/.hermes"
@@ -28,8 +39,5 @@ YAML
 fi
 
 chown -R node:node /paperclip
-
-# Preserve the hermes venv PATH so the node user can find the `hermes` binary.
-export PATH="/opt/hermes-venv/bin:$PATH"
 
 exec gosu node "$@"

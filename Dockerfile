@@ -31,18 +31,13 @@ RUN apt-get update \
     python3 \
     python3-pip \
     python3-venv \
-    python3-dev \
-    build-essential \
     ripgrep \
     git \
     && rm -rf /var/lib/apt/lists/*
 RUN corepack enable
 
-# Install Hermes Agent (Nous Research) for hermes_local adapter support.
-# Using a venv avoids PEP 668 "externally-managed" restrictions on bookworm.
-RUN python3 -m venv /opt/hermes-venv \
-    && /opt/hermes-venv/bin/pip install --no-cache-dir hermes-agent
-ENV PATH="/opt/hermes-venv/bin:$PATH"
+# hermes-agent is installed at first boot into /paperclip/hermes-venv (persistent volume)
+# to avoid heavy pip compilation during Docker build. See entrypoint.sh.
 
 WORKDIR /app
 COPY --from=paperclip-build /paperclip /app
