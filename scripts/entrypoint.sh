@@ -4,40 +4,39 @@ set -e
 # Create dirs Paperclip needs and ensure the whole tree is owned by node.
 mkdir -p /paperclip/instances/default/logs
 
-# Install hermes-agent on first boot into /paperclip/hermes-venv (persisted volume).
-# Skipped if already installed. Runs as root before the gosu switch so it can write to /paperclip.
 HERMES_VENV="/paperclip/hermes-venv"
-if [ ! -f "$HERMES_VENV/bin/hermes" ]; then
-  echo "[entrypoint] Installing hermes-agent into $HERMES_VENV (first boot only)..."
-  python3 -m venv "$HERMES_VENV"
-  "$HERMES_VENV/bin/pip" install --no-cache-dir --quiet hermes-agent
-  echo "[entrypoint] hermes-agent installed."
-fi
-export PATH="$HERMES_VENV/bin:$PATH"
-
-# Seed Hermes config on first boot.
-# HOME=/paperclip per Paperclip Dockerfile, so ~/.hermes == /paperclip/.hermes.
 HERMES_HOME="/paperclip/.hermes"
+
+# Seed Hermes config directory now (fast, blocking — just mkdir + file writes).
 mkdir -p "$HERMES_HOME"
 chmod 700 "$HERMES_HOME"
 
-# Write .env with ANTHROPIC_API_KEY if not already present.
-HERMES_ENV="$HERMES_HOME/.env"
-if [ ! -f "$HERMES_ENV" ] && [ -n "$ANTHROPIC_API_KEY" ]; then
-  printf 'ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY" > "$HERMES_ENV"
-  chmod 600 "$HERMES_ENV"
+if [ ! -f "$HERMES_HOME/.env" ] && [ -n "$ANTHROPIC_API_KEY" ]; then
+  printf 'ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY" > "$HERMES_HOME/.env"
+  chmod 600 "$HERMES_HOME/.env"
 fi
 
-# Write config.yaml with Anthropic as default provider if not already present.
-HERMES_CONFIG="$HERMES_HOME/config.yaml"
-if [ ! -f "$HERMES_CONFIG" ]; then
-  cat > "$HERMES_CONFIG" <<'YAML'
+if [ ! -f "$HERMES_HOME/config.yaml" ]; then
+  cat > "$HERMES_HOME/config.yaml" <<'YAML'
 model:
   provider: "anthropic"
   default: "claude-sonnet-4-6"
 YAML
 fi
 
+# Fix volume ownership.
 chown -R node:node /paperclip
+
+# Install hermes-agent in the background so the server starts immediately.
+# pip install takes ~2-4 min; it completes on the volume before any agent runs.
+if [ ! -f "$HERMES_VENV/bin/hermes" ]; then
+  echo "[entrypoint] Starting hermes-agent background install into $HERMES_VENV..."
+  (python3 -m venv "$HERMES_VENV" \
+    && "$HERMES_VENV/bin/pip" install --no-cache-dir --quiet hermes-agent \
+    && chown -R node:node "$HERMES_VENV" \
+    && echo "[entrypoint] hermes-agent install complete.") &
+fi
+
+export PATH="$HERMES_VENV/bin:$PATH"
 
 exec gosu node "$@"
